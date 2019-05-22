@@ -99,6 +99,7 @@ Private macros
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
+#define APP_CNT_URI_PATH  						"/cnt"
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
@@ -139,6 +140,7 @@ static void APP_ProcessLedCmd(uint8_t *pCommand, uint8_t dataLen);
 static void APP_CoapGenericCallback(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
+static void APP_CoapCntCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void App_RestoreLeaderLed(void *param);
 #if LARGE_NETWORK
@@ -155,6 +157,7 @@ Public global variables declarations
 ==================================================================================================*/
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
+const coapUriPath_t gAPP_CNT_URI_PATH = {SizeOfString(APP_CNT_URI_PATH), (uint8_t *)APP_CNT_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
@@ -499,7 +502,9 @@ static void APP_InitCoapDemo
 {
     coapRegCbParams_t cbParams[] =  {{APP_CoapLedCb,  (coapUriPath_t *)&gAPP_LED_URI_PATH},
                                      {APP_CoapTempCb, (coapUriPath_t *)&gAPP_TEMP_URI_PATH},
-#if LARGE_NETWORK
+									 {APP_CoapCntCb, (coapUriPath_t *)&gAPP_CNT_URI_PATH},
+
+									 #if LARGE_NETWORK
                                      {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
 #endif
                                      {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}};
@@ -1328,6 +1333,66 @@ static void APP_CoapTempCb
         MEM_BufferFree(pTempString);
     }
 }
+
+static void APP_CoapCntCb
+(
+    coapSessionStatus_t sessionStatus,
+    void *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    uint8_t tempString[2] = {0,0};
+    uint32_t ackPloadSize = 0, maxDisplayedString = 10;
+    static uint8_t cnt = 0;
+
+    /* Send CoAP ACK */
+    if(gCoapGET_c == pSession->code)
+    {
+        /* Get Temperature */
+    	cnt++;
+    	cnt=cnt%10;
+    	tempString[0] = cnt + '0';
+
+        ackPloadSize = 1;
+    }
+    /* Do not parse the message if it is duplicated */
+    else if((gCoapPOST_c == pSession->code) && (sessionStatus == gCoapSuccess_c))
+    {
+        if(NULL != pData)
+        {
+            char addrStr[INET6_ADDRSTRLEN];
+            uint8_t temp[10];
+
+            ntop(AF_INET6, &pSession->remoteAddr, addrStr, INET6_ADDRSTRLEN);
+            shell_write("\r");
+
+            if(0 != dataLen)
+            {
+                /* Prevent from buffer overload */
+                (dataLen >= maxDisplayedString) ? (dataLen = (maxDisplayedString - 1)) : (dataLen);
+                temp[dataLen]='\0';
+                FLib_MemCpy(temp,pData,dataLen);
+                shell_printf((char*)temp);
+            }
+            shell_printf("\tFrom IPv6 Address: %s\n\r", addrStr);
+            shell_refresh();
+        }
+    }
+
+    if(gCoapConfirmable_c == pSession->msgType)
+    {
+        if(gCoapGET_c == pSession->code)
+        {
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, tempString, ackPloadSize);
+        }
+        else
+        {
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
+        }
+    }
+}
+
 
 /*!*************************************************************************************************
 \private

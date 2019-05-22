@@ -227,7 +227,7 @@ static void SHELL_CoapAckReceive(coapSessionStatus_t sessionStatus, void *pData,
 
 /*marj set ip*/
 static int8_t SHELL_SetIp(uint8_t argc, char *argv[]);
-char *serverip[];
+extern ipAddr_t         ServerIpAddr;
 
 /* Ping functions */
 static int8_t SHELL_Ping(uint8_t argc, char *argv[]);
@@ -3658,61 +3658,62 @@ static int8_t SHELL_SetIp
     char *argv[]
 )
 {
-    ipPktInfo_t *pIpPktInfo;
+    
     command_ret_t ret = CMD_RET_SUCCESS;
-    uint8_t i, ap = AF_UNSPEC;
-    uint16_t count;
-    char *pValue;
+    uint8_t ap = AF_UNSPEC;
+
+
     bool_t validDstIpAddr = FALSE;
 
     /* Stop infinite ping */
-    if(argc == 0)
+    if(argc == 1)
     {
-        if(mContinuousPing)
-        {
-            SHELL_Resume();
-        }
+        shell_write("Provide an IP!");
+        
+        
+        
     }
     /* Check number of arguments according to the shellComm table */
     else
     {
-        /* Reset the size of the ping */
-        mPingSize = PING_PAYLOAD_DEFAULT_SIZE;
-        mPingTimeoutMs = DEFAULT_TIMEOUT;
-        count = 0; /* infinite ping */
-
+       
+       
+       
+       
+       
         /* Check if the destination IPv4/IPv6 address is valid */
-        for (i = 1; i < argc; i++)
-        {
-            /* Verify IP address (v4 or v6) */
-            uint8_t *pText = (uint8_t *)argv[i];
 
-            while (*pText != '\0')
-            {
-                if (*pText == '.')
-                {
-                    ap = AF_INET;
-                    break;
-                }
-                if (*pText == ':')
-                {
-                    ap = AF_INET6;
-                    break;
-                }
-                pText++;
-            }
+		/* Verify IP address (v4 or v6) */
+		uint8_t *pText = (uint8_t *)argv[1];
 
-            if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[i], &mDstIpAddr)))
-            {
-                validDstIpAddr = TRUE;
-                break;
-            }
-        }
+		while (*pText != '\0')
+		{
+			if (*pText == '.')
+			{
+				ap = AF_INET;
+				break;
+			}
+			if (*pText == ':')
+			{
+				ap = AF_INET6;
+				break;
+			}
+			pText++;
+		}
+
+		if ((ap != AF_UNSPEC) && (1 == pton(ap, argv[1], &ServerIpAddr)))
+		{
+			validDstIpAddr = TRUE;
+			break;
+		}
+
 
         if (!validDstIpAddr)
         {
             shell_write("Invalid destination IP address");
             return CMD_RET_FAILURE;
+        }else {
+        	shell_write("Server IP address set");
         }
 
     }
