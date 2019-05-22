@@ -99,11 +99,15 @@ Private macros
 #define APP_LED_URI_PATH                        "/led"
 #define APP_TEMP_URI_PATH                       "/temp"
 #define APP_SINK_URI_PATH                       "/sink"
+#define APP_SRV_URI_PATH                       "/srv"
 #if LARGE_NETWORK
 #define APP_RESET_TO_FACTORY_URI_PATH           "/reset"
 #endif
 
 #define APP_DEFAULT_DEST_ADDR                   in6addr_realmlocal_allthreadnodes
+
+ ipAddr_t         ServerIpAddr;
+ ipAddr_t         DestinationIpAddr;
 
 /*==================================================================================================
 Private type definitions
@@ -139,6 +143,7 @@ static void APP_ProcessLedCmd(uint8_t *pCommand, uint8_t dataLen);
 static void APP_CoapGenericCallback(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapLedCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapTempCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
+static void APP_CoapSrvCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void APP_CoapSinkCb(coapSessionStatus_t sessionStatus, void *pData, coapSession_t *pSession, uint32_t dataLen);
 static void App_RestoreLeaderLed(void *param);
 #if LARGE_NETWORK
@@ -156,6 +161,9 @@ Public global variables declarations
 const coapUriPath_t gAPP_LED_URI_PATH  = {SizeOfString(APP_LED_URI_PATH), (uint8_t *)APP_LED_URI_PATH};
 const coapUriPath_t gAPP_TEMP_URI_PATH = {SizeOfString(APP_TEMP_URI_PATH), (uint8_t *)APP_TEMP_URI_PATH};
 const coapUriPath_t gAPP_SINK_URI_PATH = {SizeOfString(APP_SINK_URI_PATH), (uint8_t *)APP_SINK_URI_PATH};
+const coapUriPath_t gAPP_SRV_URI_PATH = {SizeOfString(APP_SRV_URI_PATH), (uint8_t *)APP_SRV_URI_PATH};
+
+
 #if LARGE_NETWORK
 const coapUriPath_t gAPP_RESET_URI_PATH = {SizeOfString(APP_RESET_TO_FACTORY_URI_PATH), (uint8_t *)APP_RESET_TO_FACTORY_URI_PATH};
 #endif
@@ -502,7 +510,9 @@ static void APP_InitCoapDemo
 #if LARGE_NETWORK
                                      {APP_CoapResetToFactoryDefaultsCb, (coapUriPath_t *)&gAPP_RESET_URI_PATH},
 #endif
-                                     {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH}};
+                                     {APP_CoapSinkCb, (coapUriPath_t *)&gAPP_SINK_URI_PATH},
+                                     {APP_CoapSrvCb, (coapUriPath_t *)&gAPP_SRV_URI_PATH}
+    									};
     /* Register Services in COAP */
     coapStartUnsecParams_t coapParams = {COAP_DEFAULT_PORT, AF_INET6};
     mAppCoapInstId = COAP_CreateInstance(NULL, &coapParams, gIpIfSlp0_c, (coapRegCbParams_t *)cbParams,
@@ -1270,6 +1280,78 @@ static void APP_ProcessLedCmd
 \param  [in]    dataLen         Length of CoAP payload
 ***************************************************************************************************/
 static void APP_CoapTempCb
+(
+    coapSessionStatus_t sessionStatus,
+    void *pData,
+    coapSession_t *pSession,
+    uint32_t dataLen
+)
+{
+    uint8_t *pTempString = NULL;
+    uint32_t ackPloadSize = 0, maxDisplayedString = 10;
+
+    /* Send CoAP ACK */
+    if(gCoapGET_c == pSession->code)
+    {
+        /* Get Temperature */
+        pTempString = App_GetTempDataString();
+        ackPloadSize = strlen((char*)pTempString);
+    }
+    /* Do not parse the message if it is duplicated */
+    else if((gCoapPOST_c == pSession->code) && (sessionStatus == gCoapSuccess_c))
+    {
+        if(NULL != pData)
+        {
+            char addrStr[INET6_ADDRSTRLEN];
+            uint8_t temp[10];
+
+            ntop(AF_INET6, &pSession->remoteAddr, addrStr, INET6_ADDRSTRLEN);
+            shell_write("\r");
+
+            if(0 != dataLen)
+            {
+                /* Prevent from buffer overload */
+                (dataLen >= maxDisplayedString) ? (dataLen = (maxDisplayedString - 1)) : (dataLen);
+                temp[dataLen]='\0';
+                FLib_MemCpy(temp,pData,dataLen);
+                shell_printf((char*)temp);
+            }
+            shell_printf("\tFrom IPv6 Address: %s\n\r", addrStr);
+            shell_refresh();
+        }
+    }
+
+    if(gCoapConfirmable_c == pSession->msgType)
+    {
+        if(gCoapGET_c == pSession->code)
+        {
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, pTempString, ackPloadSize);
+        }
+        else
+        {
+            COAP_Send(pSession, gCoapMsgTypeAckSuccessChanged_c, NULL, 0);
+        }
+    }
+
+    if(pTempString)
+    {
+        MEM_BufferFree(pTempString);
+    }
+}
+
+/*!*************************************************************************************************
+\private
+\fn     static void APP_CoapSrvCb(coapSessionStatus_t sessionStatus, void *pData,
+                                   coapSession_t *pSession, uint32_t dataLen)
+\brief  This function is the callback function for CoAP temperature message.
+\brief  It sends the temperature value in a CoAP ACK message.
+
+\param  [in]    sessionStatus   Status for CoAP session
+\param  [in]    pData           Pointer to CoAP message payload
+\param  [in]    pSession        Pointer to CoAP session
+\param  [in]    dataLen         Length of CoAP payload
+***************************************************************************************************/
+static void APP_CoapSrvCb
 (
     coapSessionStatus_t sessionStatus,
     void *pData,
